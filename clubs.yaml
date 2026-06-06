@@ -1,0 +1,11 @@
+# List the PractiScore club page URLs you want to track.
+# To find a club's URL: go to https://practiscore.com, search for the club,
+# and copy the URL from your browser. It will look like:
+#   https://practiscore.com/clubs/<club-slug>
+#
+# Club names are fetched automatically from PractiScore on the first scrape.
+# You only need to provide the URLs.
+
+clubs:
+  - https://practiscore.com/clubs/your-club-slug
+  - https://practiscore.com/clubs/another-club-slug
