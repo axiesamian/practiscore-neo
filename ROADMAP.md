@@ -28,21 +28,6 @@ Planned features and open research tasks. Roughly ordered by priority.
 
 ---
 
-## Research
-
-### Investigate PractiScore's internal API
-- PractiScore has a REST API at `api.beta.practiscore.com` with a per-club endpoint (`/clubs/{slug}/matches`) and a general search endpoint (`/search/matches`)
-- The API appears to use Firebase authentication — likely obtainable via Firebase anonymous auth (no real account needed)
-- If this works: eliminates ScraperAPI entirely, no credits, no Cloudflare workaround
-- **Action:** Test Firebase anonymous auth flow with PractiScore's Firebase API key to confirm the approach works end to end
-
-### Investigate alternative scraping services
-- Current setup: ScraperAPI free tier (1,000 credits/month) — already hitting the limit
-- Zyte (formerly Splash/Scrapy Cloud) was recommended as a potentially cheaper option
-- **Action:** Compare Zyte, ScraperAPI paid tiers, and any other residential proxy services on price per request and reliability against Cloudflare
-
----
-
 ## Future (depends on scraping cost)
 
 ### User-submitted clubs
