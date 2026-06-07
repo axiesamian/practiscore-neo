@@ -183,6 +183,58 @@ async def poll_clubs():
                     log.info(f"Match cancelled: {db_match['title']}")
 
 
+COMMAND_HELP = {
+    "about": {
+        "summary": "About this bot and project",
+        "description": "Displays information about the PractiScore Neo bot and a link to the project repository for anyone who wants to self-host their own instance.",
+        "usage": "`/about`",
+        "examples": ["`/about`"],
+    },
+    "status": {
+        "summary": "Show bot status",
+        "description": "Shows the bot's current operational status: last scrape time, next scheduled scrape, number of clubs tracked, and number of active matches in the database.",
+        "usage": "`/status`",
+        "examples": ["`/status`"],
+    },
+    "clubs": {
+        "summary": "List all tracked clubs",
+        "description": "Lists all PractiScore clubs the bot is currently monitoring for new matches and registration openings.",
+        "usage": "`/clubs`",
+        "examples": ["`/clubs`"],
+    },
+    "matches": {
+        "summary": "Show upcoming matches",
+        "description": "Shows upcoming matches from all tracked clubs, or filtered to a specific club. Data comes from the bot's most recent scrape — use `/status` to see when that was.",
+        "usage": "`/matches` or `/matches [club]`",
+        "examples": ["`/matches`", "`/matches Gainesville Practical Shooters`"],
+    },
+    "subscribe": {
+        "summary": "Subscribe to DM alerts for a club",
+        "description": "Subscribe to receive direct message notifications for a club. You'll get a DM when a new match is posted and again when registration opens.",
+        "usage": "`/subscribe <club>`",
+        "examples": ["`/subscribe Gainesville Practical Shooters`"],
+    },
+    "unsubscribe": {
+        "summary": "Unsubscribe from DM alerts for a club",
+        "description": "Stop receiving direct message notifications for a club. Use `/mysubscriptions` to see which clubs you're currently subscribed to.",
+        "usage": "`/unsubscribe <club>`",
+        "examples": ["`/unsubscribe Gainesville Practical Shooters`"],
+    },
+    "mysubscriptions": {
+        "summary": "List your active subscriptions",
+        "description": "Shows all clubs you're currently subscribed to for DM notifications.",
+        "usage": "`/mysubscriptions`",
+        "examples": ["`/mysubscriptions`"],
+    },
+    "help": {
+        "summary": "Show available commands",
+        "description": "Shows a list of all available commands, or detailed usage information for a specific command.",
+        "usage": "`/help` or `/help [command]`",
+        "examples": ["`/help`", "`/help matches`"],
+    },
+}
+
+
 # --- Autocomplete helpers ---
 
 async def all_clubs_autocomplete(interaction: discord.Interaction, current: str):
@@ -201,6 +253,14 @@ async def subscribed_clubs_autocomplete(interaction: discord.Interaction, curren
         app_commands.Choice(name=s["name"], value=s["url"])
         for s in subs
         if current.lower() in s["name"].lower()
+    ]
+
+
+async def help_command_autocomplete(interaction: discord.Interaction, current: str):
+    return [
+        app_commands.Choice(name=name, value=name)
+        for name in COMMAND_HELP
+        if current.lower() in name.lower()
     ]
 
 
@@ -383,6 +443,33 @@ async def status_command(interaction: discord.Interaction):
     embed.add_field(name="Next Scrape", value=next_str, inline=False)
 
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="help", description="Show available commands or get help for a specific command")
+@app_commands.describe(command="Command to get help for (optional)")
+@app_commands.autocomplete(command=help_command_autocomplete)
+async def help_command(interaction: discord.Interaction, command: str = None):
+    if command:
+        info = COMMAND_HELP.get(command)
+        if not info:
+            await interaction.response.send_message(f"Unknown command: `{command}`", ephemeral=True)
+            return
+        embed = discord.Embed(
+            title=f"/{command}",
+            description=info["description"],
+            color=discord.Color.blue(),
+        )
+        embed.add_field(name="Usage", value=info["usage"], inline=False)
+        embed.add_field(name="Examples", value="\n".join(info["examples"]), inline=False)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    else:
+        lines = [f"`/{name}` — {info['summary']}" for name, info in COMMAND_HELP.items()]
+        embed = discord.Embed(
+            title="PractiScore Neo — Commands",
+            description="The following commands are available. Run `/help [command]` for more details.\n\n" + "\n".join(lines),
+            color=discord.Color.blue(),
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
 if __name__ == "__main__":
