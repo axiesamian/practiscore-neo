@@ -10,6 +10,7 @@ from discord.ext import commands, tasks
 from config import (
     BOT_TOKEN, CHANNEL_ID, GUILD_ID, POLL_INTERVAL_HOURS, DB_PATH,
     SCRAPE_WINDOW_START, SCRAPE_WINDOW_END, SCRAPE_TIMEZONE,
+    ZYTE_API_KEY, SCRAPER_API_KEY,
 )
 from database import (
     init_db, get_conn,
@@ -332,6 +333,39 @@ async def mysubscriptions_command(interaction: discord.Interaction):
         description="\n".join(lines),
         color=discord.Color.green(),
     )
+    await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="status", description="Show bot status and scraping info")
+async def status_command(interaction: discord.Interaction):
+    if ZYTE_API_KEY:
+        backend = "Zyte API"
+    elif SCRAPER_API_KEY:
+        backend = "ScraperAPI"
+    else:
+        backend = "Direct (no proxy)"
+
+    if last_scraped:
+        last_str = last_scraped.strftime("%b %d %I:%M %p ") + SCRAPE_TIMEZONE
+        next_scrape = last_scraped + timedelta(hours=POLL_INTERVAL_HOURS)
+        next_str = next_scrape.strftime("%b %d %I:%M %p ") + SCRAPE_TIMEZONE
+    else:
+        last_str = "Not yet scraped this session"
+        next_str = "Next active window tick"
+
+    with get_conn(DB_PATH) as conn:
+        club_count = conn.execute("SELECT COUNT(*) FROM clubs").fetchone()[0]
+        match_count = conn.execute(
+            "SELECT COUNT(*) FROM matches WHERE cancelled IS NOT 1"
+        ).fetchone()[0]
+
+    embed = discord.Embed(title="PractiScore Neo — Status", color=discord.Color.blurple())
+    embed.add_field(name="Scraping Backend", value=backend, inline=True)
+    embed.add_field(name="Clubs Tracked", value=str(club_count), inline=True)
+    embed.add_field(name="Active Matches", value=str(match_count), inline=True)
+    embed.add_field(name="Last Scrape", value=last_str, inline=False)
+    embed.add_field(name="Next Scrape", value=next_str, inline=False)
+
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 
