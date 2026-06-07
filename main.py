@@ -11,7 +11,6 @@ from discord.ext import commands, tasks
 from config import (
     BOT_TOKEN, CHANNEL_ID, GUILD_ID, POLL_INTERVAL_HOURS, DB_PATH,
     SCRAPE_WINDOW_START, SCRAPE_WINDOW_END, SCRAPE_TIMEZONE,
-    ZYTE_API_KEY, SCRAPER_API_KEY,
 )
 from database import (
     init_db, get_conn,
@@ -233,32 +232,33 @@ async def matches_command(interaction: discord.Interaction, club: str = None):
 
     with get_conn(DB_PATH) as conn:
         if club:
-            clubs = conn.execute("SELECT url, name FROM clubs WHERE url = ?", (club,)).fetchall()
+            club_row = conn.execute("SELECT name FROM clubs WHERE url = ?", (club,)).fetchone()
+            if not club_row:
+                await interaction.followup.send("Club not found.", ephemeral=True)
+                return
+            matches = conn.execute(
+                """SELECT title, date, match_type, url, registration_notified, club_name
+                   FROM matches
+                   WHERE club_url = ? AND cancelled IS NOT 1 AND announced = 1
+                   ORDER BY date""",
+                (club,),
+            ).fetchall()
         else:
-            clubs = conn.execute("SELECT url, name FROM clubs").fetchall()
+            matches = conn.execute(
+                """SELECT title, date, match_type, url, registration_notified, club_name
+                   FROM matches
+                   WHERE cancelled IS NOT 1 AND announced = 1
+                   ORDER BY date""",
+            ).fetchall()
 
-    if not clubs:
-        await interaction.followup.send("Club not found.", ephemeral=True)
-        return
-
-    all_matches = []
-    for c in clubs:
-        try:
-            result = scrape_club(c["url"])
-            for m in result["matches"]:
-                m["club_name"] = result["name"]
-            all_matches.extend(result["matches"])
-        except Exception as e:
-            log.error(f"Failed to scrape {c['url']}: {e}")
-
-    if not all_matches:
+    if not matches:
         await interaction.followup.send("No upcoming matches found.", ephemeral=True)
         return
 
-    title = f"Upcoming Matches — {clubs[0]['name']}" if club else "Upcoming Matches"
+    title = f"Upcoming Matches — {club_row['name']}" if club else "Upcoming Matches"
     embed = discord.Embed(title=title, color=discord.Color.blue())
-    for m in all_matches:
-        status = "Open" if m["registration_open"] else "Not yet open"
+    for m in matches:
+        status = "Open" if m["registration_notified"] else "Not yet open"
         value = f"📅 {m['date']}\n🏆 {m['match_type']}\n🎯 Registration: {status}\n[Register]({m['url']})"
         embed.add_field(
             name=f"{m['club_name']} — {m['title']}",
@@ -362,13 +362,6 @@ async def about_command(interaction: discord.Interaction):
 
 @bot.tree.command(name="status", description="Show bot status and scraping info")
 async def status_command(interaction: discord.Interaction):
-    if ZYTE_API_KEY:
-        backend = "Zyte API"
-    elif SCRAPER_API_KEY:
-        backend = "ScraperAPI"
-    else:
-        backend = "Direct (no proxy)"
-
     if last_scraped:
         last_str = last_scraped.strftime("%b %d %I:%M %p ") + SCRAPE_TIMEZONE
         next_scrape = last_scraped + timedelta(hours=POLL_INTERVAL_HOURS)
@@ -384,7 +377,6 @@ async def status_command(interaction: discord.Interaction):
         ).fetchone()[0]
 
     embed = discord.Embed(title="PractiScore Neo — Status", color=discord.Color.blurple())
-    embed.add_field(name="Scraping Backend", value=backend, inline=True)
     embed.add_field(name="Clubs Tracked", value=str(club_count), inline=True)
     embed.add_field(name="Active Matches", value=str(match_count), inline=True)
     embed.add_field(name="Last Scrape", value=last_str, inline=False)
