@@ -1,4 +1,5 @@
 import logging
+import requests
 import yaml
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -334,6 +335,28 @@ async def mysubscriptions_command(interaction: discord.Interaction):
         color=discord.Color.green(),
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="about", description="About this bot and project")
+async def about_command(interaction: discord.Interaction):
+    repo_url = "https://github.com/axiesamian/practiscore-neo"
+    try:
+        response = requests.get(
+            "https://api.github.com/repos/axiesamian/practiscore-neo",
+            timeout=10,
+        )
+        description = response.json().get("description", "")
+    except Exception:
+        description = ""
+
+    embed = discord.Embed(
+        title="PractiScore Neo",
+        url=repo_url,
+        description=description,
+        color=discord.Color.blue(),
+    )
+    embed.add_field(name="​", value=f"More info: {repo_url}", inline=False)
+    await interaction.response.send_message(embed=embed)
 
 
 @bot.tree.command(name="status", description="Show bot status and scraping info")

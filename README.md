@@ -141,6 +141,8 @@ Increase `POLL_INTERVAL_HOURS` to reduce request volume if needed.
 
 | Command | Description |
 |---|---|
+| `/about` | About this bot and project |
+| `/status` | Shows scraping backend, last scrape time, clubs tracked, and active match count |
 | `/clubs` | Lists all tracked clubs |
 | `/matches [club]` | Shows upcoming matches; optionally filtered to one club |
 | `/subscribe <club>` | Subscribe to DM alerts for a club |
