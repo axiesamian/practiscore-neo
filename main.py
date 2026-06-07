@@ -188,19 +188,19 @@ COMMAND_HELP = {
         "summary": "About this bot and project",
         "description": "Displays information about the PractiScore Neo bot and a link to the project repository for anyone who wants to self-host their own instance.",
         "usage": "`/about`",
-        "examples": ["`/about`"],
+        "examples": [],
     },
     "status": {
         "summary": "Show bot status",
         "description": "Shows the bot's current operational status: last scrape time, next scheduled scrape, number of clubs tracked, and number of active matches in the database.",
         "usage": "`/status`",
-        "examples": ["`/status`"],
+        "examples": [],
     },
     "clubs": {
         "summary": "List all tracked clubs",
         "description": "Lists all PractiScore clubs the bot is currently monitoring for new matches and registration openings.",
         "usage": "`/clubs`",
-        "examples": ["`/clubs`"],
+        "examples": [],
     },
     "matches": {
         "summary": "Show upcoming matches",
@@ -224,7 +224,7 @@ COMMAND_HELP = {
         "summary": "List your active subscriptions",
         "description": "Shows all clubs you're currently subscribed to for DM notifications.",
         "usage": "`/mysubscriptions`",
-        "examples": ["`/mysubscriptions`"],
+        "examples": [],
     },
     "help": {
         "summary": "Show available commands",
@@ -460,7 +460,8 @@ async def help_command(interaction: discord.Interaction, command: str = None):
             color=discord.Color.blue(),
         )
         embed.add_field(name="Usage", value=info["usage"], inline=False)
-        embed.add_field(name="Examples", value="\n".join(info["examples"]), inline=False)
+        if info["examples"]:
+            embed.add_field(name="Examples", value="\n".join(info["examples"]), inline=False)
         await interaction.response.send_message(embed=embed, ephemeral=True)
     else:
         lines = [f"`/{name}` — {info['summary']}" for name, info in COMMAND_HELP.items()]
