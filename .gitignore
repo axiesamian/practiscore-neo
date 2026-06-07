@@ -1,20 +1,11 @@
 # Secrets
 .env
 
-# Database (contains match history and user subscription data)
+# Database
 data/
-
-# SSH keys and deployment-specific files
-Oracle/
 
 # Python
 __pycache__/
 *.pyc
 venv/
 .venv/
-
-# Editor / tooling
-.claude/
-*.psd
-*.png
-CLAUDE.md
