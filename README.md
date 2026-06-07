@@ -8,8 +8,8 @@ A Discord bot that monitors [PractiScore](https://practiscore.com) club pages an
 - Sends a follow-up notification when registration opens
 - Detects and announces match cancellations
 - DM subscriptions — users can opt in to receive alerts in their DMs
-- Slash commands: `/clubs`, `/matches`, `/subscribe`, `/unsubscribe`, `/mysubscriptions`
-- Configurable scraping window (e.g. daytime only) to conserve API credits
+- Slash commands: `/about`, `/status`, `/clubs`, `/matches`, `/subscribe`, `/unsubscribe`, `/mysubscriptions`
+- Configurable scraping window (e.g. daytime only) to reduce API usage
 
 ## Prerequisites
 
