@@ -339,6 +339,7 @@ async def mysubscriptions_command(interaction: discord.Interaction):
 
 @bot.tree.command(name="about", description="About this bot and project")
 async def about_command(interaction: discord.Interaction):
+    await interaction.response.defer()
     repo_url = "https://github.com/axiesamian/practiscore-neo"
     try:
         response = requests.get(
@@ -356,7 +357,7 @@ async def about_command(interaction: discord.Interaction):
         color=discord.Color.blue(),
     )
     embed.add_field(name="​", value=f"More info: {repo_url}", inline=False)
-    await interaction.response.send_message(embed=embed)
+    await interaction.followup.send(embed=embed)
 
 
 @bot.tree.command(name="status", description="Show bot status and scraping info")
