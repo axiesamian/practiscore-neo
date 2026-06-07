@@ -46,3 +46,4 @@ Planned features and open research tasks. Roughly ordered by priority.
 - [x] Configurable scraping window and poll interval
 - [x] Clubs configurable via `clubs.yaml` (names auto-fetched from PractiScore)
 - [x] Published to GitHub as `practiscore-neo`
+- [x] Slash commands: `/help`, `/about`, `/status`
