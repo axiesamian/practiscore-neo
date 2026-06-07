@@ -10,12 +10,6 @@ Planned features and open research tasks. Roughly ordered by priority.
 - Allow users to submit feedback or bug reports from within Discord via a slash command
 - Report should be routed somewhere actionable (private channel, DM to admin, or GitHub issue)
 
-### `/help` command
-- `/help` lists all available commands with a short description of each
-- `/help [command]` gives detailed usage for a specific command (parameters, examples, behavior)
-
----
-
 ## Configuration
 
 ### Feature flags via config file
