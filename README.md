@@ -15,7 +15,7 @@ A Discord bot that monitors [PractiScore](https://practiscore.com) club pages an
 
 - Python 3.11 or higher
 - A Discord bot token — [create one here](https://discord.com/developers/applications)
-- A ScraperAPI key — [free tier at scraperapi.com](https://www.scraperapi.com) (1,000 credits/month)
+- A scraping service API key if hosting on a cloud/datacenter IP (see [Configuration Reference](#configuration-reference))
 
 ## Setup
 
@@ -116,7 +116,8 @@ All configuration lives in `.env`. Copy `.env.example` to get started.
 | `BOT_TOKEN` | Yes | — | Discord bot token |
 | `GUILD_ID` | Yes | — | Your Discord server ID |
 | `CHANNEL_ID` | Yes | — | Channel ID for match announcements |
-| `SCRAPER_API_KEY` | Yes | — | ScraperAPI key (Cloudflare bypass) |
+| `ZYTE_API_KEY` | No | — | Zyte API key — used first if set. [zyte.com](https://www.zyte.com) |
+| `SCRAPER_API_KEY` | No | — | ScraperAPI key — used if Zyte key is not set. [scraperapi.com](https://www.scraperapi.com) |
 | `POLL_INTERVAL_HOURS` | No | `1` | Minimum hours between scrapes |
 | `SCRAPE_WINDOW_START` | No | `8` | Hour (24h) to start scraping each day |
 | `SCRAPE_WINDOW_END` | No | `21` | Hour (24h) to stop scraping each day |
@@ -124,17 +125,15 @@ All configuration lives in `.env`. Copy `.env.example` to get started.
 
 `SCRAPE_TIMEZONE` accepts any [IANA timezone name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones), such as `America/Chicago`, `America/Los_Angeles`, or `Europe/London`.
 
-### ScraperAPI credit budget
+### Scraping API usage estimate
 
-The free tier provides 1,000 credits/month (1 credit per club per scrape).
-
-| Clubs | Interval | Est. credits/month |
+| Clubs | Interval | Est. requests/month |
 |---|---|---|
-| 3 | 3 hours | ~720 |
-| 5 | 3 hours | ~1,200 |
-| 10 | 3 hours | ~2,400 |
+| 3 | 3 hours | ~450 |
+| 5 | 3 hours | ~750 |
+| 10 | 3 hours | ~1,500 |
 
-Increase `POLL_INTERVAL_HOURS` or upgrade your ScraperAPI plan if you exceed the free tier.
+Increase `POLL_INTERVAL_HOURS` to reduce request volume if needed.
 
 ---
 

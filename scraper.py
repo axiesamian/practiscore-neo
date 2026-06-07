@@ -1,8 +1,35 @@
+import base64
 import requests
 from bs4 import BeautifulSoup
-from config import SCRAPER_API_KEY
+from config import SCRAPER_API_KEY, ZYTE_API_KEY
 
 SCRAPERAPI_ENDPOINT = "http://api.scraperapi.com"
+ZYTE_ENDPOINT = "https://api.zyte.com/v1/extract"
+
+
+def _fetch(url):
+    if ZYTE_API_KEY:
+        response = requests.post(
+            ZYTE_ENDPOINT,
+            auth=(ZYTE_API_KEY, ""),
+            json={"url": url, "httpResponseBody": True},
+            timeout=60,
+        )
+        response.raise_for_status()
+        data = response.json()
+        html = base64.b64decode(data["httpResponseBody"]).decode("utf-8", errors="replace")
+        status = data.get("httpResponseStatusCode", 200)
+        return html, status
+    elif SCRAPER_API_KEY:
+        response = requests.get(
+            SCRAPERAPI_ENDPOINT,
+            params={"api_key": SCRAPER_API_KEY, "url": url},
+            timeout=60,
+        )
+        return response.text, response.status_code
+    else:
+        response = requests.get(url, timeout=60)
+        return response.text, response.status_code
 
 
 def _extract_club_name(soup, url):
@@ -18,13 +45,10 @@ def _extract_club_name(soup, url):
 
 
 def scrape_club(url):
-    response = requests.get(
-        SCRAPERAPI_ENDPOINT,
-        params={"api_key": SCRAPER_API_KEY, "url": url},
-        timeout=60,
-    )
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
+    html, status = _fetch(url)
+    if status >= 400:
+        raise requests.HTTPError(f"HTTP {status} for {url}")
+    soup = BeautifulSoup(html, "html.parser")
 
     club_name = _extract_club_name(soup, url)
     matches = []
@@ -64,14 +88,9 @@ def scrape_club(url):
 
 
 def check_match_cancelled(match_url):
-    """Returns True if the match page is gone (404), False if it still loads."""
     base_url = match_url.rstrip("/").rsplit("/", 1)[0]
     try:
-        response = requests.get(
-            SCRAPERAPI_ENDPOINT,
-            params={"api_key": SCRAPER_API_KEY, "url": base_url},
-            timeout=60,
-        )
-        return response.status_code == 404
+        _, status = _fetch(base_url)
+        return status == 404
     except Exception:
         return False
