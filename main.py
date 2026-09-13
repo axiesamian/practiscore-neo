@@ -11,6 +11,7 @@ from discord.ext import commands, tasks
 from config import (
     BOT_TOKEN, CHANNEL_ID, GUILD_ID, POLL_INTERVAL_HOURS, DB_PATH,
     SCRAPE_WINDOW_START, SCRAPE_WINDOW_END, SCRAPE_TIMEZONE,
+    OWNER_ID, FAILURE_ALERT_THRESHOLD,
 )
 from database import (
     init_db, get_conn,
@@ -20,7 +21,10 @@ from database import (
     get_active_matches_for_club, mark_match_cancelled,
 )
 from scraper import scrape_club, check_match_cancelled
-from notifier import new_match_embed, registration_open_embed, match_cancelled_embed, match_view
+from notifier import (
+    new_match_embed, registration_open_embed, match_cancelled_embed, match_view,
+    scrape_failure_embed, scrape_recovered_embed,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,6 +51,8 @@ def load_clubs_config():
 
 @bot.event
 async def on_ready():
+    global owner_id
+
     log.info(f"Logged in as {bot.user}")
     guild = discord.Object(id=GUILD_ID)
 
@@ -60,6 +66,17 @@ async def on_ready():
     except Exception as e:
         log.error(f"Failed to sync slash commands: {e}")
 
+    if OWNER_ID:
+        owner_id = OWNER_ID
+        log.info(f"Failure alerts will be DM'd to configured owner {owner_id}")
+    else:
+        try:
+            app_info = await bot.application_info()
+            owner_id = app_info.owner.id
+            log.info(f"Failure alerts will be DM'd to app owner {app_info.owner} ({owner_id})")
+        except Exception as e:
+            log.error(f"Could not resolve an owner for failure alerts: {e}")
+
     club_urls = load_clubs_config()
     if club_urls:
         seed_clubs(DB_PATH, club_urls)
@@ -72,6 +89,10 @@ async def on_ready():
 ET = ZoneInfo(SCRAPE_TIMEZONE)
 
 last_scraped: datetime | None = None
+last_successful_scrape: datetime | None = None
+consecutive_failed_cycles: int = 0
+failure_alert_sent: bool = False
+owner_id: int | None = None
 
 
 async def _dm_subscribers(club_url: str, embed: discord.Embed, view: discord.ui.View):
@@ -82,6 +103,53 @@ async def _dm_subscribers(club_url: str, embed: discord.Embed, view: discord.ui.
             await user.send(embed=embed, view=view)
         except Exception as e:
             log.warning(f"Could not DM user {user_id}: {e}")
+
+
+async def _dm_owner(embed: discord.Embed) -> bool:
+    """DM the bot owner. Returns True only if the message actually sent."""
+    if not owner_id:
+        log.error("No owner resolved — cannot send failure alert DM")
+        return False
+    try:
+        user = await bot.fetch_user(owner_id)
+        await user.send(embed=embed)
+        return True
+    except Exception as e:
+        log.error(f"Could not DM owner {owner_id}: {e}")
+        return False
+
+
+async def _handle_scrape_health(total_clubs: int, failures: list, now: datetime):
+    """Alert the owner once when every club fails repeatedly, once again on recovery."""
+    global last_successful_scrape, consecutive_failed_cycles, failure_alert_sent
+
+    if total_clubs == 0:
+        log.error("No clubs matched in the database — nothing was scraped this cycle")
+        return
+
+    if failures and len(failures) == total_clubs:
+        consecutive_failed_cycles += 1
+        log.error(
+            f"Scrape cycle failed for all {total_clubs} clubs "
+            f"(consecutive failures: {consecutive_failed_cycles})"
+        )
+        if consecutive_failed_cycles >= FAILURE_ALERT_THRESHOLD and not failure_alert_sent:
+            embed = scrape_failure_embed(failures, consecutive_failed_cycles, last_successful_scrape)
+            if await _dm_owner(embed):
+                failure_alert_sent = True
+                log.info("Sent scrape failure alert to owner")
+        return
+
+    last_successful_scrape = now
+
+    if failure_alert_sent:
+        if await _dm_owner(scrape_recovered_embed(consecutive_failed_cycles, now)):
+            log.info("Sent scrape recovery notice to owner")
+    elif consecutive_failed_cycles:
+        log.info(f"Scraping recovered after {consecutive_failed_cycles} failed cycles")
+
+    consecutive_failed_cycles = 0
+    failure_alert_sent = False
 
 
 @tasks.loop(hours=1)
@@ -115,6 +183,8 @@ async def poll_clubs():
             club_urls,
         ).fetchall()
 
+    failures = []
+
     for club in clubs:
         try:
             result = scrape_club(club["url"])
@@ -123,6 +193,7 @@ async def poll_clubs():
             log.info(f"Scraped {len(matches)} matches for {result['name']}")
         except Exception as e:
             log.error(f"Failed to scrape {club['url']}: {e}")
+            failures.append((club["name"] or club["url"], str(e)))
             continue
 
         for match in matches:
@@ -181,6 +252,8 @@ async def poll_clubs():
                     await channel.send(embed=embed)
                     await _dm_subscribers(club["url"], embed, discord.ui.View())
                     log.info(f"Match cancelled: {db_match['title']}")
+
+    await _handle_scrape_health(len(clubs), failures, now)
 
 
 COMMAND_HELP = {
@@ -436,10 +509,18 @@ async def status_command(interaction: discord.Interaction):
             "SELECT COUNT(*) FROM matches WHERE cancelled IS NOT 1"
         ).fetchone()[0]
 
+    if consecutive_failed_cycles:
+        health = f"⚠️ Failing — {consecutive_failed_cycles} consecutive failed cycles"
+    elif last_successful_scrape:
+        health = "✅ OK — " + last_successful_scrape.strftime("%b %d %I:%M %p ") + SCRAPE_TIMEZONE
+    else:
+        health = "No completed scrape yet this session"
+
     embed = discord.Embed(title="PractiScore Neo — Status", color=discord.Color.blurple())
     embed.add_field(name="Clubs Tracked", value=str(club_count), inline=True)
     embed.add_field(name="Active Matches", value=str(match_count), inline=True)
-    embed.add_field(name="Last Scrape", value=last_str, inline=False)
+    embed.add_field(name="Scrape Health", value=health, inline=False)
+    embed.add_field(name="Last Scrape Attempt", value=last_str, inline=False)
     embed.add_field(name="Next Scrape", value=next_str, inline=False)
 
     await interaction.response.send_message(embed=embed, ephemeral=True)

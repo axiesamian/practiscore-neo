@@ -15,7 +15,10 @@ def _fetch(url):
             json={"url": url, "httpResponseBody": True},
             timeout=60,
         )
-        response.raise_for_status()
+        if response.status_code >= 400:
+            raise requests.HTTPError(
+                f"Zyte API {response.status_code}: {response.text[:300]}"
+            )
         data = response.json()
         html = base64.b64decode(data["httpResponseBody"]).decode("utf-8", errors="replace")
         status = data.get("httpResponseStatusCode", 200)
