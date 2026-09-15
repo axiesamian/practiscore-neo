@@ -152,7 +152,7 @@ Increase `POLL_INTERVAL_HOURS` to reduce request volume if needed.
 | `/matches [club]` | Shows upcoming matches; optionally filtered to one club |
 | `/subscribe <club>` | Subscribe to DM alerts for a club |
 | `/unsubscribe <club>` | Unsubscribe from alerts for a club |
-| `/mysubscriptions` | Lists your active subscriptions |
+| `/mysubscriptions` | Lists your active subscriptions (alias: `/subscriptions`) |
 
 ---
 

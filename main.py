@@ -309,7 +309,7 @@ COMMAND_HELP = {
     "mysubscriptions": {
         "summary": "List your active subscriptions",
         "description": "Shows all clubs you're currently subscribed to for DM notifications.",
-        "usage": "`/mysubscriptions`",
+        "usage": "`/mysubscriptions` or `/subscriptions`",
         "examples": [],
     },
     "help": {
@@ -318,6 +318,11 @@ COMMAND_HELP = {
         "usage": "`/help` or `/help [command]`",
         "examples": ["`/help`", "`/help matches`"],
     },
+}
+
+# Alternate names for commands: alias -> canonical name in COMMAND_HELP.
+COMMAND_ALIASES = {
+    "subscriptions": "mysubscriptions",
 }
 
 
@@ -343,9 +348,10 @@ async def subscribed_clubs_autocomplete(interaction: discord.Interaction, curren
 
 
 async def help_command_autocomplete(interaction: discord.Interaction, current: str):
+    names = list(COMMAND_HELP) + list(COMMAND_ALIASES)
     return [
         app_commands.Choice(name=name, value=name)
-        for name in COMMAND_HELP
+        for name in names
         if current.lower() in name.lower()
     ]
 
@@ -463,8 +469,7 @@ async def unsubscribe_command(interaction: discord.Interaction, club: str):
         )
 
 
-@bot.tree.command(name="mysubscriptions", description="See your active club subscriptions")
-async def mysubscriptions_command(interaction: discord.Interaction):
+async def _send_subscriptions(interaction: discord.Interaction):
     subs = get_user_subscriptions(DB_PATH, interaction.user.id)
 
     if not subs:
@@ -481,6 +486,16 @@ async def mysubscriptions_command(interaction: discord.Interaction):
         color=discord.Color.green(),
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
+
+
+@bot.tree.command(name="mysubscriptions", description="See your active club subscriptions")
+async def mysubscriptions_command(interaction: discord.Interaction):
+    await _send_subscriptions(interaction)
+
+
+@bot.tree.command(name="subscriptions", description="See your active club subscriptions")
+async def subscriptions_command(interaction: discord.Interaction):
+    await _send_subscriptions(interaction)
 
 
 @bot.tree.command(name="about", description="About this bot and project")
@@ -544,6 +559,7 @@ async def status_command(interaction: discord.Interaction):
 @app_commands.autocomplete(command=help_command_autocomplete)
 async def help_command(interaction: discord.Interaction, command: str = None):
     if command:
+        command = COMMAND_ALIASES.get(command, command)
         info = COMMAND_HELP.get(command)
         if not info:
             await interaction.response.send_message(f"Unknown command: `{command}`", ephemeral=True)
