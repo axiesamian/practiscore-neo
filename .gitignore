@@ -1,6 +1,9 @@
 # Secrets
 .env
 
+# Local config — copy from clubs.example.yaml
+clubs.yaml
+
 # Database
 data/
 

@@ -45,7 +45,11 @@ Open `.env` and fill in all values. See the [Configuration Reference](#configura
 
 ### 4. Configure clubs
 
-Open `clubs.yaml` and replace the example URLs with the PractiScore club pages you want to track:
+```bash
+cp clubs.example.yaml clubs.yaml
+```
+
+Open `clubs.yaml` and replace the example URLs with the PractiScore club pages you want to track. `clubs.yaml` is git-ignored, so pulling updates never overwrites your list:
 
 ```yaml
 clubs:

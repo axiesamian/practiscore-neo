@@ -45,7 +45,7 @@ def load_clubs_config():
             log.error("clubs.yaml has no clubs defined — add at least one URL.")
         return urls
     except FileNotFoundError:
-        log.error("clubs.yaml not found — add your club URLs to clubs.yaml.")
+        log.error("clubs.yaml not found — copy clubs.example.yaml to clubs.yaml and add your club URLs.")
         return []
 
 
@@ -88,11 +88,22 @@ async def on_ready():
 
 ET = ZoneInfo(SCRAPE_TIMEZONE)
 
+# Hourly ticks land a few ms short of a whole interval; without slack they get skipped
+SCRAPE_INTERVAL_SLACK_SECONDS = 300
+
 last_scraped: datetime | None = None
 last_successful_scrape: datetime | None = None
 consecutive_failed_cycles: int = 0
 failure_alert_sent: bool = False
 owner_id: int | None = None
+
+
+def _match_has_passed(date_str: str, today) -> bool:
+    """True once a match's date is behind us. Unparseable dates count as not passed."""
+    try:
+        return datetime.strptime(date_str, "%B %d, %Y").date() < today
+    except ValueError:
+        return False
 
 
 async def _dm_subscribers(club_url: str, embed: discord.Embed, view: discord.ui.View):
@@ -161,7 +172,7 @@ async def poll_clubs():
         log.info(f"Outside scrape window — skipping tick at {now.strftime('%I:%M %p')} {SCRAPE_TIMEZONE}")
         return
 
-    if last_scraped and (now - last_scraped).total_seconds() < POLL_INTERVAL_HOURS * 3600:
+    if last_scraped and (now - last_scraped).total_seconds() < POLL_INTERVAL_HOURS * 3600 - SCRAPE_INTERVAL_SLACK_SECONDS:
         log.info(f"Too soon since last scrape — next scrape after {last_scraped + timedelta(hours=POLL_INTERVAL_HOURS):%I:%M %p} {SCRAPE_TIMEZONE}")
         return
 
@@ -241,11 +252,13 @@ async def poll_clubs():
                     )
                     conn.commit()
 
-        # Cancellation check — look for announced matches that didn't appear in this scrape
+        # Cancellation check — look for announced matches that didn't appear in this scrape.
+        # Past matches also drop off the listing but their pages still load, so checking
+        # them would cost a request every cycle forever.
         scraped_ids = {m["match_id"] for m in matches}
         active_db_matches = get_active_matches_for_club(DB_PATH, club["url"])
         for db_match in active_db_matches:
-            if db_match["match_id"] not in scraped_ids:
+            if db_match["match_id"] not in scraped_ids and not _match_has_passed(db_match["date"], now.date()):
                 if check_match_cancelled(db_match["url"]):
                     mark_match_cancelled(DB_PATH, db_match["match_id"])
                     embed = match_cancelled_embed(db_match, result["name"])
