@@ -1,38 +1,24 @@
 # PractiScore Neo — Roadmap
 
-Planned features and open research tasks. Roughly ordered by priority.
+The bot is now a personal, DM-only bot. Planned work, roughly in order.
 
 ---
 
-## Commands
+## Exact registration times via PractiScore's search index
 
-### Feedback and bug reporting
-- Allow users to submit feedback or bug reports from within Discord via a slash command
-- Report should be routed somewhere actionable (private channel, DM to admin, or GitHub issue)
+Club pages only give a rounded countdown ("opens in 1 week"), and match pages hide exact times behind a login. PractiScore's own match search is backed by an Algolia index whose records carry exact `reg_open_date` / `reg_close_date` values and the Open/Closed status.
 
-## Configuration
+- Phase 2: run an index reader beside the club-page scraper and log differences for a week, without alerting
+- Phase 3, if the test holds up: use it for `standard` and `manual` clubs and `/scan`, schedule checks at exact registration times, and keep the club-page scraper as a fallback
+- Failure checks: key capture failure, rejected key, schema changes, silently empty results, and daily disagreement with the club page
 
-### Feature flags via config file
-- Add a `features` section to `clubs.yaml` (or a separate config file) to enable/disable bot features
-- Initial flag: `subscriptions` — lets server owners turn off the `/subscribe`, `/unsubscribe`, and `/mysubscriptions` commands and DM behavior if they don't want it
+## `/findclub <name>`
 
-### Admin configuration via Discord slash commands
-- Add slash commands so server admins can manage the bot without editing files or restarting:
-  - `/config addclub <url>` — add a club to track
-  - `/config removeclub <club>` — stop tracking a club
-  - `/config setchannel <channel>` — set the announcements channel
-  - `/config features` — view and toggle feature flags
-- Requires role-based permission gating — only users with a designated admin role (or server admin) can use these commands
+Search PractiScore's club directory by name, with buttons to track the club or scan it once. Depends on the index reader above.
 
----
+## Unverified registration labels
 
-## Future (depends on scraping cost)
-
-### User-submitted clubs
-- Allow non-admin Discord users to add their own clubs via a slash command
-- Only viable if per-request scraping cost drops enough that open-ended club additions don't run up a large bill
-- Will need a rate limit or approval flow to prevent abuse
-- Blocked on: resolving scraping economics (API workaround or cheaper service)
+Labels for full matches, waitlists and registration closed by date haven't been seen yet. They're reported as unknown when they appear, and the parser gets extended then.
 
 ---
 
@@ -40,10 +26,13 @@ Planned features and open research tasks. Roughly ordered by priority.
 
 - [x] Match announcement notifications
 - [x] Registration open notifications
-- [x] Match cancellation detection
-- [x] DM subscriptions (`/subscribe`, `/unsubscribe`, `/mysubscriptions`)
-- [x] Slash commands: `/clubs`, `/matches`
-- [x] Configurable scraping window and poll interval
-- [x] Clubs configurable via `clubs.yaml` (names auto-fetched from PractiScore)
+- [x] Slash commands: `/clubs`, `/matches`, `/help`, `/status`
 - [x] Published to GitHub as `practiscore-neo`
-- [x] Slash commands: `/help`, `/about`, `/status`
+- [x] Owner-only, DM-only bot (2026-09)
+- [x] Club tiers: watched, standard, manual, paused
+- [x] Match levels (starred, normal, muted) with DM buttons and per-club rules
+- [x] Registration closed-again, reopened and date-change alerts
+- [x] Removal detection from the club listing (replaced a 404 check that could never fire)
+- [x] Checks scheduled around "opens in N hours", including overnight
+- [x] `/scraping on|off`, `/addclub`, `/removeclub`, `/tier`, `/scan`, `/star`, `/unstar`, `/mute`, `/rule`
+- [x] Failure alert state stored in the database, so restarts don't re-arm it

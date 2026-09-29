@@ -1,10 +1,33 @@
 import base64
+import re
+from datetime import timedelta
+
 import requests
 from bs4 import BeautifulSoup
 from config import SCRAPER_API_KEY, ZYTE_API_KEY
 
 SCRAPERAPI_ENDPOINT = "http://api.scraperapi.com"
 ZYTE_ENDPOINT = "https://api.zyte.com/v1/extract"
+
+CLUB_URL_RE = re.compile(r"^https?://(?:www\.)?practiscore\.com/clubs/([A-Za-z0-9_\-]+)/?$")
+
+# "opens in 5 hours", "opens in 1 week" — PractiScore rounds down to the largest whole unit
+COUNTDOWN_RE = re.compile(r"opens\s+in\s+(\d+)\s+(second|minute|hour|day|week|month|year)s?", re.I)
+COUNTDOWN_UNITS = {
+    "second": timedelta(seconds=1),
+    "minute": timedelta(minutes=1),
+    "hour": timedelta(hours=1),
+    "day": timedelta(days=1),
+    "week": timedelta(weeks=1),
+    "month": timedelta(days=30),
+    "year": timedelta(days=365),
+}
+
+
+def normalize_club_url(url: str) -> str | None:
+    """Canonical club URL, or None if it isn't a PractiScore club page."""
+    m = CLUB_URL_RE.match(url.strip())
+    return f"https://practiscore.com/clubs/{m.group(1)}" if m else None
 
 
 def _fetch(url):
@@ -47,10 +70,36 @@ def _extract_club_name(soup, url):
     return url.rstrip("/").split("/")[-1]
 
 
-def scrape_club(url):
-    html, status = _fetch(url)
-    if status >= 400:
-        raise requests.HTTPError(f"HTTP {status} for {url}")
+def parse_label(classes: list[str], text: str) -> str:
+    """Registration state from a listing label.
+
+    Verified on 2026-09-29: open is `label-success "open"`; not-yet-open and closed
+    share `label-default`, told apart only by the text ("opens in …" vs "closed").
+    """
+    text = " ".join(text.split()).lower()
+    if "label-success" in classes:
+        return "open"
+    if text.startswith("opens in"):
+        return "not_yet"
+    if text == "closed":
+        return "closed"
+    return "unknown"
+
+
+def parse_countdown(text: str):
+    """(lower, upper) bound on time until registration opens, or None.
+
+    The label rounds down, so "opens in 5 hours" means somewhere in [5h, 6h).
+    """
+    m = COUNTDOWN_RE.search(text)
+    if not m:
+        return None
+    unit = COUNTDOWN_UNITS[m.group(2).lower()]
+    n = int(m.group(1))
+    return n * unit, (n + 1) * unit
+
+
+def parse_club_page(html: str, url: str) -> dict:
     soup = BeautifulSoup(html, "html.parser")
 
     club_name = _extract_club_name(soup, url)
@@ -73,10 +122,9 @@ def scrape_club(url):
 
         match_type = " ".join(divs[1].get_text(strip=True).split()) if len(divs) > 1 else ""
 
-        status_span = item.select_one("span.label")
-        registration_open = bool(
-            status_span and "label-success" in status_span.get("class", [])
-        )
+        status_span = item.select_one("div.pull-right span.label") or item.select_one("span.label")
+        label_text = " ".join(status_span.get_text().split()) if status_span else ""
+        reg_state = parse_label(status_span.get("class", []) if status_span else [], label_text)
 
         matches.append({
             "match_id": match_id,
@@ -84,16 +132,15 @@ def scrape_club(url):
             "url": match_url,
             "date": date,
             "match_type": match_type,
-            "registration_open": registration_open,
+            "reg_state": reg_state,
+            "label_text": label_text,
         })
 
     return {"name": club_name, "matches": matches}
 
 
-def check_match_cancelled(match_url):
-    base_url = match_url.rstrip("/").rsplit("/", 1)[0]
-    try:
-        _, status = _fetch(base_url)
-        return status == 404
-    except Exception:
-        return False
+def scrape_club(url):
+    html, status = _fetch(url)
+    if status >= 400:
+        raise requests.HTTPError(f"HTTP {status} for {url}")
+    return parse_club_page(html, url)
