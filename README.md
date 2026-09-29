@@ -100,7 +100,7 @@ All commands are DM-only.
 | `/clubs` | Tracked clubs with tier, last check, counts and rules |
 | `/status` | Scraping on/off, health, next checks |
 | `/scraping <on\|off>` | Pause or resume all scheduled checks. The bot stays online |
-| `/help` | Command and tier/level reference |
+| `/help [command]` | Command list with tiers and levels, or details and examples for one command |
 
 ## Configuration
 

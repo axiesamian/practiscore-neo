@@ -202,7 +202,7 @@ def event_view(event) -> discord.ui.View:
     if url and event.kind != "removed":
         label = "Register Now" if event.match.get("reg_state") == "open" else "View Match"
         view.add_item(discord.ui.Button(label=label, url=url, style=discord.ButtonStyle.link))
-    if event.kind in ("new", "opened", "reopened"):
+    if event.kind != "removed":
         for level in LEVELS:
             view.add_item(LevelButton(event.match["match_id"], level, current=event.level))
     return view
@@ -650,25 +650,140 @@ async def status_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
-HELP_LINES = [
-    ("scraping", "Turn all scheduled checks on or off"),
-    ("addclub", "Track a club by URL, with a tier"),
-    ("removeclub", "Stop tracking a club"),
-    ("tier", "watched · standard · manual · paused"),
-    ("scan", "Check a club now and pick matches to star"),
-    ("star / unstar / mute", "Set a match's alert level"),
-    ("rule", "Auto-set levels for a club's new matches by type"),
-    ("matches", "Upcoming matches, all clubs or one"),
-    ("clubs", "Tracked clubs, tiers and rules"),
-    ("status", "Scraping on/off, health, next checks"),
-]
+COMMAND_HELP = {
+    "scraping": {
+        "summary": "Turn all scheduled checks on or off",
+        "description": "Pauses or resumes every scheduled check, including registration-time checks. "
+                       "The bot stays online and commands keep working. Turning it back on sends one "
+                       "catch-up summary per club instead of an alert for everything that changed. "
+                       "The setting survives restarts.",
+        "usage": "`/scraping state:<on|off>`",
+        "examples": ["`/scraping state:off`", "`/scraping state:on`"],
+    },
+    "addclub": {
+        "summary": "Track a club by URL, with a tier",
+        "description": "Loads the club page once (1 request) to confirm it exists and get its name, then "
+                       "replies with its upcoming matches and a picker to star some. New matches default to "
+                       "starred for watched clubs, normal for standard, muted for manual.",
+        "usage": "`/addclub url:<club page URL> [tier:<watched|standard|manual|paused>]` (default watched)",
+        "examples": ["`/addclub url:https://practiscore.com/clubs/tps-uspsa`",
+                     "`/addclub url:https://practiscore.com/clubs/some-club tier:manual`"],
+    },
+    "removeclub": {
+        "summary": "Stop tracking a club",
+        "description": "Deletes the club with its matches, rules and scheduled checks. To stop checking "
+                       "it but keep everything, use `/tier` with `paused` instead.",
+        "usage": "`/removeclub club:<club>`",
+        "examples": ["`/removeclub club:Friendly Gun Club`"],
+    },
+    "tier": {
+        "summary": "Change how often a club is checked",
+        "description": "\n".join(f"**{t}** — {TIER_DESCRIPTIONS[t]}" for t in TIERS)
+                       + "\n\nLeaving paused sends one summary of what changed while it was paused.",
+        "usage": "`/tier club:<club> tier:<watched|standard|manual|paused>`",
+        "examples": ["`/tier club:Gainesville Practical Shooters tier:standard`",
+                     "`/tier club:Friendly Gun Club tier:paused`"],
+    },
+    "scan": {
+        "summary": "Check a club now and pick matches to star",
+        "description": "Checks the club immediately (1 request), whatever its tier, and replies with its "
+                       "upcoming matches plus a picker. Selected matches become starred; unselected starred "
+                       "matches go back to normal (muted for manual clubs). For a manual club, starring is "
+                       "how you ask to be told when registration opens.",
+        "usage": "`/scan club:<club>`",
+        "examples": ["`/scan club:TPS USPSA`"],
+    },
+    "star": {
+        "summary": "Get every alert for a match",
+        "description": "Starred matches alert on: new, registration open, closed again, reopened, date "
+                       "changed, removed from the listing. Same as the ⭐ Star button on alerts.",
+        "usage": "`/star match:<match>`",
+        "examples": ["`/star match:TPS USPSA October`"],
+    },
+    "unstar": {
+        "summary": "Back to normal alerts for a match",
+        "description": "Normal matches alert only when posted and when registration opens.",
+        "usage": "`/unstar match:<match>`",
+        "examples": ["`/unstar match:Guardian Steel Training Event`"],
+    },
+    "mute": {
+        "summary": "No alerts for a match",
+        "description": "The match is still tracked and shown in `/matches`, but nothing is DM'd about it "
+                       "(except an unrecognized registration label).",
+        "usage": "`/mute match:<match>`",
+        "examples": ["`/mute match:TPS PCSL Carbine`"],
+    },
+    "rule": {
+        "summary": "Auto-set levels for a club's new matches",
+        "description": "When a club posts a new match whose type or title contains the text (case doesn't "
+                       "matter), it gets that level instead of the tier default. If several rules match, "
+                       "the longest text wins. Rules only affect matches posted after they're made; use "
+                       "`/star` or `/mute` for existing ones. Pick `remove` to delete a rule. The reply "
+                       "lists the club's rules.",
+        "usage": "`/rule club:<club> text:<text> level:<starred|normal|muted|remove>`",
+        "examples": ["`/rule club:TPS USPSA text:Steel Challenge level:normal`",
+                     "`/rule club:TPS USPSA text:PCSL level:muted`",
+                     "`/rule club:TPS USPSA text:PCSL level:remove`"],
+    },
+    "matches": {
+        "summary": "Upcoming matches, all clubs or one",
+        "description": "Reads the database, so it costs no requests. Shows each match's date, registration "
+                       "state and level (⭐ starred, 🔇 muted). Data is as of each club's last check.",
+        "usage": "`/matches [club:<club>]`",
+        "examples": ["`/matches`", "`/matches club:TPS USPSA`"],
+    },
+    "clubs": {
+        "summary": "Tracked clubs, tiers and rules",
+        "description": "Each club's tier, last check, upcoming and starred counts, rules and page link.",
+        "usage": "`/clubs`",
+        "examples": [],
+    },
+    "status": {
+        "summary": "Scraping on/off, health, next checks",
+        "description": "Whether scraping is on, whether recent checks succeeded, clubs per tier, the next "
+                       "regular check (runs "
+                       f"{SCRAPE_WINDOW_START}:00–{SCRAPE_WINDOW_END}:00 {SCRAPE_TIMEZONE}), and the next "
+                       "check timed to a registration opening (runs at any hour).",
+        "usage": "`/status`",
+        "examples": [],
+    },
+    "help": {
+        "summary": "This list, or details for one command",
+        "description": "Without a command, lists every command plus how tiers and levels work.",
+        "usage": "`/help [command:<command>]`",
+        "examples": ["`/help`", "`/help command:rule`"],
+    },
+}
 
 
-@bot.tree.command(name="help", description="List commands and how alerts work")
-async def help_command(interaction: discord.Interaction):
+async def help_autocomplete(interaction: discord.Interaction, current: str):
+    return [app_commands.Choice(name=name, value=name) for name in COMMAND_HELP
+            if current.lower() in name][:25]
+
+
+@bot.tree.command(name="help", description="List commands, or get details for one")
+@app_commands.describe(command="Command to explain (optional)")
+@app_commands.autocomplete(command=help_autocomplete)
+async def help_command(interaction: discord.Interaction, command: str = None):
+    if command:
+        info = COMMAND_HELP.get(command.strip().lstrip("/").lower())
+        if not info:
+            await interaction.response.send_message(
+                f"Unknown command `{command}`. Run `/help` for the list."
+            )
+            return
+        name = command.strip().lstrip("/").lower()
+        embed = discord.Embed(title=f"/{name}", description=info["description"], color=discord.Color.blue())
+        embed.add_field(name="Usage", value=info["usage"], inline=False)
+        if info["examples"]:
+            embed.add_field(name="Examples", value="\n".join(info["examples"]), inline=False)
+        await interaction.response.send_message(embed=embed)
+        return
+
     embed = discord.Embed(
         title="PractiScore Neo — Commands",
-        description="\n".join(f"`/{name}` — {text}" for name, text in HELP_LINES),
+        description="\n".join(f"`/{name}` — {info['summary']}" for name, info in COMMAND_HELP.items())
+                    + "\n\nRun `/help command:<name>` for details and examples.",
         color=discord.Color.blue(),
     )
     embed.add_field(
