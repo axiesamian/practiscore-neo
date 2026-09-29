@@ -120,6 +120,7 @@ All configuration lives in `.env`.
 | `SCRAPE_TIMEZONE` | No | `America/New_York` | Timezone for the window ([IANA name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)) |
 | `FAILURE_ALERT_THRESHOLD` | No | `3` | Failed checks in a row before the failure DM |
 | `DB_PATH` | No | `data/matches.db` | SQLite database path |
+| `GUIDE_URL` | No | `https://civdef.xyz/ps-neo/` | Usage guide linked from `/help` |
 
 ### Request usage
 

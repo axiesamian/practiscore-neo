@@ -10,6 +10,8 @@ ZYTE_API_KEY = os.getenv("ZYTE_API_KEY")
 OWNER_ID = int(os.getenv("OWNER_ID")) if os.getenv("OWNER_ID") else None
 FAILURE_ALERT_THRESHOLD = int(os.getenv("FAILURE_ALERT_THRESHOLD", "3"))
 DB_PATH = os.getenv("DB_PATH", "data/matches.db")
+# Usage guide linked from /help; per-command links append #cmd-<name>
+GUIDE_URL = os.getenv("GUIDE_URL", "https://civdef.xyz/ps-neo/")
 
 # How often each club tier is checked, in hours
 WATCHED_INTERVAL_HOURS = float(os.getenv("WATCHED_INTERVAL_HOURS", "3"))

@@ -8,7 +8,7 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 from config import (
-    BOT_TOKEN, DB_PATH, OWNER_ID, FAILURE_ALERT_THRESHOLD,
+    BOT_TOKEN, DB_PATH, OWNER_ID, FAILURE_ALERT_THRESHOLD, GUIDE_URL,
     WATCHED_INTERVAL_HOURS, STANDARD_INTERVAL_HOURS, MANUAL_INTERVAL_HOURS,
     SCRAPE_WINDOW_START, SCRAPE_WINDOW_END, SCRAPE_TIMEZONE,
 )
@@ -756,6 +756,17 @@ COMMAND_HELP = {
 }
 
 
+# Commands that share another command's entry in the guide
+GUIDE_ANCHORS = {"unstar": "star", "mute": "star"}
+
+
+def guide_view(anchor="", label="Full guide") -> discord.ui.View:
+    view = discord.ui.View()
+    view.add_item(discord.ui.Button(label=label, emoji="📖", url=GUIDE_URL + anchor,
+                                    style=discord.ButtonStyle.link))
+    return view
+
+
 async def help_autocomplete(interaction: discord.Interaction, current: str):
     return [app_commands.Choice(name=name, value=name) for name in COMMAND_HELP
             if current.lower() in name][:25]
@@ -777,7 +788,9 @@ async def help_command(interaction: discord.Interaction, command: str = None):
         embed.add_field(name="Usage", value=info["usage"], inline=False)
         if info["examples"]:
             embed.add_field(name="Examples", value="\n".join(info["examples"]), inline=False)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(
+            embed=embed, view=guide_view(f"#cmd-{GUIDE_ANCHORS.get(name, name)}", f"/{name} in the guide")
+        )
         return
 
     embed = discord.Embed(
@@ -798,7 +811,7 @@ async def help_command(interaction: discord.Interaction, command: str = None):
               "🔇 **muted** — nothing",
         inline=False,
     )
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(embed=embed, view=guide_view())
 
 
 if __name__ == "__main__":
