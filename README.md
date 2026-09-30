@@ -2,6 +2,8 @@
 
 A personal Discord bot that watches [PractiScore](https://practiscore.com) club pages and DMs you when matches are posted and when registration opens. It is built for one person: every command and every alert happens in the bot's DMs, and nobody else can use it.
 
+The full usage guide is at [civdef.xyz/ps-neo](https://civdef.xyz/ps-neo/), and `/help` links to it.
+
 ## Features
 
 - **DM-only, owner-only.** Slash commands work only in the bot's DMs, and only for you.
@@ -24,6 +26,7 @@ A personal Discord bot that watches [PractiScore](https://practiscore.com) club 
 - **Buttons on alerts** to star, unstar or mute a match straight from the DM.
 - **Summaries instead of floods.** Adding a club, resuming a paused club or turning scraping back on sends one summary, not an alert per match.
 - **Failure alerts.** One DM when checks keep failing, one when they recover.
+- **Zyte spend tracking.** `/usage` shows what Zyte has charged this billing period against your monthly cap, and the bot DMs you as spend passes 50%, 80% and 95% of it. Optional; needs your Zyte dashboard API key.
 
 ## How it works
 
@@ -99,6 +102,7 @@ All commands are DM-only.
 | `/matches [club]` | Upcoming matches with registration state and level |
 | `/clubs` | Tracked clubs with tier, last check, counts and rules |
 | `/status` | Scraping on/off, health, next checks |
+| `/usage` | Zyte spend this billing period: dollars against the cap, requests, failures, projection, last 7 days |
 | `/scraping <on\|off>` | Pause or resume all scheduled checks. The bot stays online |
 | `/help [command]` | Command list with tiers and levels, or details and examples for one command |
 
@@ -112,6 +116,11 @@ All configuration lives in `.env`.
 | `OWNER_ID` | No | application owner | The only user the bot answers and DMs |
 | `ZYTE_API_KEY` | No | — | Zyte API key; used first if set. [zyte.com](https://www.zyte.com) |
 | `SCRAPER_API_KEY` | No | — | ScraperAPI key; used if no Zyte key. [scraperapi.com](https://www.scraperapi.com) |
+| `ZYTE_DASHBOARD_KEY` | No | — | Zyte dashboard API key for `/usage` and spend alerts. Not the same as `ZYTE_API_KEY`: it's the API key on [app.zyte.com/o/settings](https://app.zyte.com/o/settings) |
+| `ZYTE_ORG_ID` | No | — | Zyte organization ID, the number in `app.zyte.com/o/<id>`. Needed with `ZYTE_DASHBOARD_KEY` |
+| `ZYTE_MONTHLY_CAP` | No | `100` | Monthly spend cap in USD. Pay as you go is fixed at $100; at the cap Zyte suspends the account until the next period |
+| `ZYTE_BILLING_DAY` | No | `7` | Day of the month the Zyte billing period rolls over (taken as midnight UTC) |
+| `ZYTE_ALERT_PERCENTS` | No | `50,80,95` | Percentages of the cap that each trigger one DM per billing period |
 | `WATCHED_INTERVAL_HOURS` | No | `3` | Check interval for `watched` clubs |
 | `STANDARD_INTERVAL_HOURS` | No | `12` | Check interval for `standard` clubs |
 | `MANUAL_INTERVAL_HOURS` | No | `24` | Check interval for `manual` clubs with a starred match waiting to open |
@@ -132,7 +141,7 @@ One request checks one club page, whatever the number of matches on it.
 | 3 watched clubs | 450 |
 | 3 watched + 5 standard | 750 |
 
-Registration-time checks add about 2 requests per starred or normal match as it approaches opening.
+Registration-time checks add about 2 requests per starred or normal match as it approaches opening. `/usage` shows the actual cost; it asks Zyte's Stats API, which doesn't use up scraping requests.
 
 ## Running as a service (Linux/systemd)
 
@@ -162,7 +171,7 @@ sudo journalctl -u practiscore-bot -f   # tail logs
 ## Tests
 
 ```bash
-python -m unittest discover -s tests -t .
+python -m unittest discover -s tests
 ```
 
 ## Upgrading from the multi-user version
