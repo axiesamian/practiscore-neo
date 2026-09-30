@@ -11,6 +11,7 @@ from config import (
     BOT_TOKEN, DB_PATH, OWNER_ID, FAILURE_ALERT_THRESHOLD, GUIDE_URL,
     WATCHED_INTERVAL_HOURS, STANDARD_INTERVAL_HOURS, MANUAL_INTERVAL_HOURS,
     SCRAPE_WINDOW_START, SCRAPE_WINDOW_END, SCRAPE_TIMEZONE,
+    ZYTE_MONTHLY_CAP, ZYTE_ALERT_PERCENTS,
 )
 from database import (
     TIERS, LEVELS, init_db, utcnow, parse_ts,
@@ -23,9 +24,10 @@ from database import (
 from monitor import process_scrape, match_has_passed
 from notifier import (
     event_embed, summary_embed, registration_text,
-    scrape_failure_embed, scrape_recovered_embed,
+    scrape_failure_embed, scrape_recovered_embed, usage_embed, usage_alert_embed,
 )
 from scraper import scrape_club, normalize_club_url
+import zyte_usage
 
 logging.basicConfig(
     level=logging.INFO,
@@ -39,6 +41,8 @@ TICK_MINUTES = 5
 INTERVAL_SLACK = timedelta(minutes=5)
 # A scheduled registration check that keeps failing is retried on each tick for this long
 SCHEDULED_RETRY_WINDOW = timedelta(minutes=30)
+# How often the scheduler asks the Zyte Stats API for spend
+USAGE_CHECK_INTERVAL = timedelta(hours=1)
 TIER_INTERVALS = {
     "watched": timedelta(hours=WATCHED_INTERVAL_HOURS),
     "standard": timedelta(hours=STANDARD_INTERVAL_HOURS),
@@ -337,9 +341,37 @@ async def record_health(attempted: int, failures: list, now: datetime):
     set_setting(DB_PATH, "failure_alert_sent", 0)
 
 
+async def check_spend(now: datetime):
+    """DM once per billing period as Zyte spend passes each alert percentage of the cap."""
+    last = parse_ts(get_setting(DB_PATH, "usage_checked_at"))
+    if last and now - last < USAGE_CHECK_INTERVAL:
+        return
+    set_setting(DB_PATH, "usage_checked_at", now.isoformat())
+    try:
+        usage = await asyncio.to_thread(zyte_usage.fetch_usage, now)
+    except Exception as e:
+        log.warning(f"Zyte usage check failed: {e}")
+        return
+
+    period = usage.period_start.date().isoformat()
+    sent_period, _, sent_pct = (get_setting(DB_PATH, "usage_alert_sent") or "").partition(":")
+    already = int(sent_pct) if sent_period == period and sent_pct else 0
+    pct = usage.cost_usd / ZYTE_MONTHLY_CAP * 100
+    passed = [p for p in ZYTE_ALERT_PERCENTS if already < p <= pct]
+    if not passed:
+        return
+    threshold = max(passed)
+    embed = usage_alert_embed(usage, ZYTE_MONTHLY_CAP, threshold, zyte_usage.projected_cost(usage, now))
+    if await dm_owner(embed=embed):
+        set_setting(DB_PATH, "usage_alert_sent", f"{period}:{threshold}")
+        log.info(f"Zyte spend alert: {pct:.1f}% of cap")
+
+
 @tasks.loop(minutes=TICK_MINUTES)
 async def tick():
     try:
+        if zyte_usage.configured():
+            await check_spend(utcnow())
         if get_setting(DB_PATH, "scraping_enabled", "1") != "1":
             return
         now = utcnow()
@@ -650,6 +682,25 @@ async def status_command(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
+@bot.tree.command(name="usage", description="Zyte API spend this billing period")
+async def usage_command(interaction: discord.Interaction):
+    if not zyte_usage.configured():
+        await interaction.response.send_message(
+            "Zyte usage isn't set up. Add `ZYTE_DASHBOARD_KEY` and `ZYTE_ORG_ID` to `.env` and restart."
+        )
+        return
+    await interaction.response.defer()
+    now = utcnow()
+    try:
+        usage = await asyncio.to_thread(zyte_usage.fetch_usage, now)
+    except Exception as e:
+        await interaction.followup.send(f"Couldn't get usage from Zyte:\n```{str(e)[:500]}```")
+        return
+    await interaction.followup.send(
+        embed=usage_embed(usage, ZYTE_MONTHLY_CAP, zyte_usage.projected_cost(usage, now))
+    )
+
+
 COMMAND_HELP = {
     "scraping": {
         "summary": "Turn all scheduled checks on or off",
@@ -745,6 +796,16 @@ COMMAND_HELP = {
                        f"{SCRAPE_WINDOW_START}:00–{SCRAPE_WINDOW_END}:00 {SCRAPE_TIMEZONE}), and the next "
                        "check timed to a registration opening (runs at any hour).",
         "usage": "`/status`",
+        "examples": [],
+    },
+    "usage": {
+        "summary": "Zyte spend this billing period",
+        "description": f"Asks the Zyte Stats API (not a scraping request, so it's free) for spend since the "
+                       f"billing period started: dollars against the ${ZYTE_MONTHLY_CAP:.0f} monthly cap, "
+                       "request count and cost per 1,000, failed requests, a projection to the reset date, "
+                       "and the last 7 days. The bot also DMs you once per period as spend passes "
+                       + ", ".join(f"{p}%" for p in ZYTE_ALERT_PERCENTS) + " of the cap.",
+        "usage": "`/usage`",
         "examples": [],
     },
     "help": {

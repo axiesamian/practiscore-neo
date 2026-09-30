@@ -22,3 +22,13 @@ MANUAL_INTERVAL_HOURS = float(os.getenv("MANUAL_INTERVAL_HOURS", "24"))
 SCRAPE_WINDOW_START = int(os.getenv("SCRAPE_WINDOW_START", "8"))
 SCRAPE_WINDOW_END = int(os.getenv("SCRAPE_WINDOW_END", "21"))
 SCRAPE_TIMEZONE = os.getenv("SCRAPE_TIMEZONE", "America/New_York")
+
+# Zyte spend reporting (/usage and spend alerts). The dashboard key is not ZYTE_API_KEY:
+# it's the API key on app.zyte.com/o/settings; the org ID is the number in app.zyte.com/o/<id>
+ZYTE_DASHBOARD_KEY = os.getenv("ZYTE_DASHBOARD_KEY")
+ZYTE_ORG_ID = os.getenv("ZYTE_ORG_ID")
+ZYTE_BILLING_DAY = int(os.getenv("ZYTE_BILLING_DAY", "7"))
+# Pay as you go caps spend at $100/month; hitting it suspends the account until the next period
+ZYTE_MONTHLY_CAP = float(os.getenv("ZYTE_MONTHLY_CAP", "100"))
+# DM once per billing period as spend passes each of these percentages of the cap
+ZYTE_ALERT_PERCENTS = [int(p) for p in os.getenv("ZYTE_ALERT_PERCENTS", "50,80,95").split(",") if p.strip()]

@@ -125,3 +125,56 @@ def scrape_recovered_embed(failed_checks, recovered_at):
         inline=False,
     )
     return embed
+
+
+def _usage_color(pct):
+    if pct >= 80:
+        return discord.Color.red()
+    if pct >= 50:
+        return ORANGE
+    return discord.Color.green()
+
+
+def _ts(dt, style="f"):
+    return f"<t:{int(dt.timestamp())}:{style}>"
+
+
+def usage_embed(usage, cap, projected):
+    """`usage` is a zyte_usage.Usage; `projected` is the projected period spend or None."""
+    pct = usage.cost_usd / cap * 100 if cap else 0
+    embed = discord.Embed(title="Zyte API usage", color=_usage_color(pct))
+    embed.add_field(
+        name="This billing period",
+        value=f"**${usage.cost_usd:.2f}** of ${cap:.0f} ({pct:.1f}%)\n"
+              f"{_ts(usage.period_start, 'D')} → {_ts(usage.period_end, 'D')} (resets {_ts(usage.period_end, 'R')})",
+        inline=False,
+    )
+    requests_line = f"{usage.requests:,}"
+    if usage.requests:
+        requests_line += f" · ${usage.cost_usd / usage.requests * 1000:.2f} per 1,000"
+        if usage.failed:
+            requests_line += f"\n{usage.failed:,} failed ({usage.failed / usage.requests:.0%})"
+    embed.add_field(name="Requests", value=requests_line, inline=True)
+    embed.add_field(
+        name="Projected",
+        value=f"${projected:.2f} by reset" if projected is not None else "After the first day",
+        inline=True,
+    )
+    recent = usage.days[-7:]
+    if recent:
+        embed.add_field(
+            name="Recent days (UTC)",
+            value="\n".join(f"{day:%b %d} — {n:,} req · ${cost:.2f}" for day, n, cost in reversed(recent)),
+            inline=False,
+        )
+    embed.set_footer(text="From the Zyte Stats API; the period is assumed to roll over at midnight UTC.")
+    return embed
+
+
+def usage_alert_embed(usage, cap, threshold, projected):
+    embed = usage_embed(usage, cap, projected)
+    embed.title = f"Zyte spend passed {threshold}% of the monthly cap"
+    embed.set_author(name="PractiScore Neo — Alert")
+    embed.description = ("At the cap, Zyte suspends the account and scraping stops until "
+                         f"{_ts(usage.period_end, 'D')}.")
+    return embed
