@@ -23,7 +23,7 @@ from database import (
 )
 from monitor import process_scrape, match_has_passed
 from notifier import (
-    event_embed, summary_embed, registration_text,
+    LEVEL_ICONS, event_embed, summary_embed, registration_text,
     scrape_failure_embed, scrape_recovered_embed, usage_embed, usage_alert_embed,
 )
 from scraper import scrape_club, normalize_club_url
@@ -150,6 +150,18 @@ def regular_check_due(club, now) -> bool:
     return last is None or now - last >= interval - INTERVAL_SLACK
 
 
+def change_tier(club, tier) -> str:
+    """Set a club's tier; leaving paused queues a summary. Returns the reply text."""
+    fields = {"tier": tier}
+    if club["tier"] == "paused" and tier != "paused":
+        fields["summary_pending"] = 1
+    update_club(DB_PATH, club["url"], **fields)
+    text = f"**{club['name']}** is now **{tier}** — {TIER_DESCRIPTIONS[tier]}."
+    if fields.get("summary_pending"):
+        text += "\nYou'll get one summary of what changed while it was paused."
+    return text
+
+
 async def dm_owner(embed=None, view=None, content=None) -> bool:
     """DM the owner. Returns True only if the message actually sent."""
     if not owner_id:
@@ -261,6 +273,200 @@ class PickView(discord.ui.View):
         else:
             text = "No matches starred."
         await interaction.response.send_message(text)
+
+
+class ManageView(discord.ui.View):
+    """/manage: a club's matches from the database, with level, tier, scan and remove controls.
+
+    Every action re-reads the database and redraws the same message.
+    """
+
+    PAGE_SIZE = 25  # Discord's limit on select options
+
+    def __init__(self, club_url):
+        super().__init__(timeout=1800)
+        self.club_url = club_url
+        self.page = 0
+        self.selected: set[str] = set()
+        self.confirm_remove = False
+        self.message: discord.Message | None = None
+        self.club = None
+        self.matches = []
+        self.note = None
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        return interaction.user.id == owner_id
+
+    async def on_timeout(self):
+        if self.message:
+            try:
+                await self.message.edit(view=None)
+            except discord.HTTPException:
+                pass
+
+    def page_matches(self):
+        start = self.page * self.PAGE_SIZE
+        return self.matches[start:start + self.PAGE_SIZE]
+
+    def render(self, note=None) -> discord.Embed | None:
+        """Reload the club and rebuild the embed and controls. None if the club is gone."""
+        self.club = get_club(DB_PATH, self.club_url)
+        if not self.club:
+            self.clear_items()
+            return None
+        self.matches = upcoming(self.club_url)
+        ids = {m["match_id"] for m in self.matches}
+        self.selected &= ids
+        pages = max(1, -(-len(self.matches) // self.PAGE_SIZE))
+        self.page = min(self.page, pages - 1)
+
+        self.clear_items()
+        if self.matches:
+            shown = self.page_matches()
+            select = discord.ui.Select(
+                placeholder="Select matches, then press Star, Normal or Mute",
+                min_values=0, max_values=len(shown), row=0,
+                options=[
+                    discord.SelectOption(
+                        label=_clip(m["title"]),
+                        value=m["match_id"],
+                        emoji=LEVEL_ICONS.get(m["level"] or "normal") or None,
+                        description=_clip(f"{m['date'] or 'TBD'} · {registration_text(m)}"),
+                        default=m["match_id"] in self.selected,
+                    )
+                    for m in shown
+                ],
+            )
+            select.callback = self.on_select
+            self.select = select
+            self.add_item(select)
+
+            for level in LEVELS:
+                label, emoji = LEVEL_BUTTONS[level]
+                button = discord.ui.Button(label=label, emoji=emoji, row=1, disabled=not self.selected,
+                                           style=discord.ButtonStyle.primary)
+                button.callback = self.level_callback(level)
+                self.add_item(button)
+            if pages > 1:
+                for step, label in ((-1, "◀ Prev"), (1, "Next ▶")):
+                    button = discord.ui.Button(label=label, row=1, style=discord.ButtonStyle.secondary,
+                                               disabled=not 0 <= self.page + step < pages)
+                    button.callback = self.page_callback(step)
+                    self.add_item(button)
+
+        tier = discord.ui.Select(
+            row=2,
+            options=[discord.SelectOption(label=f"Tier: {t}", value=t, description=TIER_DESCRIPTIONS[t],
+                                          default=t == self.club["tier"]) for t in TIERS],
+        )
+        tier.callback = self.on_tier
+        self.tier_select = tier
+        self.add_item(tier)
+
+        scan = discord.ui.Button(label="Scan now", emoji="🔄", row=3, style=discord.ButtonStyle.secondary)
+        scan.callback = self.on_scan
+        self.add_item(scan)
+        if self.confirm_remove:
+            confirm = discord.ui.Button(label=f"Yes, remove {_clip(self.club['name'], 60)}", emoji="🗑",
+                                        row=3, style=discord.ButtonStyle.danger)
+            confirm.callback = self.on_remove_confirmed
+            cancel = discord.ui.Button(label="Cancel", row=3, style=discord.ButtonStyle.secondary)
+            cancel.callback = self.on_remove_cancelled
+            self.add_item(confirm)
+            self.add_item(cancel)
+        else:
+            remove = discord.ui.Button(label="Remove club", emoji="🗑", row=3, style=discord.ButtonStyle.danger)
+            remove.callback = self.on_remove
+            self.add_item(remove)
+
+        last = parse_ts(self.club["last_checked"])
+        footer = [f"Last checked {last.astimezone(TZ):%b %d, %I:%M %p %Z}" if last else "Not checked yet",
+                  "no requests used until you press Scan now"]
+        if pages > 1:
+            footer.append(f"page {self.page + 1} of {pages}")
+        if self.selected:
+            footer.append(f"{len(self.selected)} selected")
+        embed = summary_embed(f"Manage {self.club['name']}",
+                              f"{self.club['tier']} — {TIER_DESCRIPTIONS[self.club['tier']]}",
+                              self.matches, " · ".join(footer))
+        if self.confirm_remove:
+            note = (f"Remove **{self.club['name']}**? This deletes its {len(self.matches)} upcoming "
+                    "matches, rules and scheduled checks. To stop checking but keep everything, "
+                    "set the tier to paused instead.")
+        self.note = note
+        return embed
+
+    async def redraw(self, interaction: discord.Interaction, note=None):
+        embed = self.render(note)
+        if embed is None:
+            await interaction.response.edit_message(content="This club is no longer tracked.",
+                                                    embed=None, view=None)
+            self.stop()
+            return
+        await interaction.response.edit_message(content=self.note, embed=embed, view=self)
+
+    async def on_select(self, interaction: discord.Interaction):
+        on_page = {m["match_id"] for m in self.page_matches()}
+        self.selected = (self.selected - on_page) | set(self.select.values)
+        await self.redraw(interaction)
+
+    def level_callback(self, level):
+        async def callback(interaction: discord.Interaction):
+            titles = [m["title"] for m in self.matches if m["match_id"] in self.selected]
+            for match_id in self.selected:
+                update_match(DB_PATH, match_id, touch=False, level=level)
+            self.selected.clear()
+            await self.redraw(interaction, f"Now {LEVEL_WORDS[level]}: "
+                                           + ", ".join(f"**{t}**" for t in titles))
+        return callback
+
+    def page_callback(self, step):
+        async def callback(interaction: discord.Interaction):
+            self.page += step
+            await self.redraw(interaction)
+        return callback
+
+    async def on_tier(self, interaction: discord.Interaction):
+        club = get_club(DB_PATH, self.club_url)
+        tier = self.tier_select.values[0]
+        if not club or tier == club["tier"]:
+            await self.redraw(interaction)
+            return
+        await self.redraw(interaction, change_tier(club, tier))
+
+    async def on_scan(self, interaction: discord.Interaction):
+        club = get_club(DB_PATH, self.club_url)
+        if not club:
+            await self.redraw(interaction)
+            return
+        await interaction.response.defer()
+        events, error = await run_check(club, utcnow())
+        if error:
+            note = f"Scan failed: {error}"
+        else:
+            update_club(DB_PATH, self.club_url, summary_pending=0)
+            note = f"Scanned just now. {summary_note(events) or 'No changes.'}"
+        embed = self.render(note)
+        if embed is None:
+            await interaction.edit_original_response(content="This club is no longer tracked.",
+                                                     embed=None, view=None)
+            self.stop()
+            return
+        await interaction.edit_original_response(content=self.note, embed=embed, view=self)
+
+    async def on_remove(self, interaction: discord.Interaction):
+        self.confirm_remove = True
+        await self.redraw(interaction)
+
+    async def on_remove_cancelled(self, interaction: discord.Interaction):
+        self.confirm_remove = False
+        await self.redraw(interaction)
+
+    async def on_remove_confirmed(self, interaction: discord.Interaction):
+        name = self.club["name"] if self.club else "the club"
+        remove_club(DB_PATH, self.club_url)
+        await interaction.response.edit_message(content=f"Stopped tracking **{name}**.", embed=None, view=None)
+        self.stop()
 
 
 # --- Checking ---
@@ -510,14 +716,7 @@ async def tier_command(interaction: discord.Interaction, club: str, tier: app_co
     if not row:
         await interaction.response.send_message("Club not found.")
         return
-    fields = {"tier": tier.value}
-    if row["tier"] == "paused" and tier.value != "paused":
-        fields["summary_pending"] = 1
-    update_club(DB_PATH, club, **fields)
-    text = f"**{row['name']}** is now **{tier.value}** — {TIER_DESCRIPTIONS[tier.value]}."
-    if fields.get("summary_pending"):
-        text += "\nYou'll get one summary of what changed while it was paused."
-    await interaction.response.send_message(text)
+    await interaction.response.send_message(change_tier(row, tier.value))
 
 
 @bot.tree.command(name="scan", description="Check a club right now and choose which matches to star")
@@ -615,6 +814,19 @@ async def matches_command(interaction: discord.Interaction, club: str = None):
         note = f"Last checked {last.astimezone(TZ):%b %d, %I:%M %p %Z}" if last else "Not checked yet"
         embeds.append(summary_embed(c["name"], f"{c['tier']} club", upcoming(c["url"]), note))
     await interaction.response.send_message(embeds=embeds)
+
+
+@bot.tree.command(name="manage", description="Star, unstar or mute a club's matches, change its tier, or remove it")
+@app_commands.describe(club="Club to manage")
+@app_commands.autocomplete(club=club_autocomplete)
+async def manage_command(interaction: discord.Interaction, club: str):
+    if not get_club(DB_PATH, club):
+        await interaction.response.send_message("Club not found.")
+        return
+    view = ManageView(club)
+    embed = view.render()
+    await interaction.response.send_message(embed=embed, view=view)
+    view.message = await interaction.original_response()
 
 
 @bot.tree.command(name="clubs", description="List tracked clubs with their tier and rules")
@@ -782,6 +994,16 @@ COMMAND_HELP = {
                        "state and level (⭐ starred, 🔇 muted). Data is as of each club's last check.",
         "usage": "`/matches [club:<club>]`",
         "examples": ["`/matches`", "`/matches club:TPS USPSA`"],
+    },
+    "manage": {
+        "summary": "Change a club's match levels, tier, or remove it",
+        "description": "Shows the club's upcoming matches from the database (no requests). Select any "
+                       "number of matches, then press ⭐ Star, Normal or 🔇 Mute; the list redraws so you "
+                       "can do several batches. The same message changes the tier, runs a scan (the only "
+                       "control that costs a request) and removes the club after you confirm. The controls "
+                       "stop working after 30 minutes; run `/manage` again for fresh ones.",
+        "usage": "`/manage club:<club>`",
+        "examples": ["`/manage club:TPS USPSA`"],
     },
     "clubs": {
         "summary": "Tracked clubs, tiers and rules",
