@@ -132,7 +132,7 @@ def local_today():
 
 def upcoming(club_url=None) -> list:
     today = local_today()
-    rows = [m for m in list_matches(DB_PATH, club_url) if not match_has_passed(m["date"], today)]
+    rows = [dict(m) for m in list_matches(DB_PATH, club_url) if not match_has_passed(m["date"], today)]
     return sorted(rows, key=match_sort_key)
 
 
