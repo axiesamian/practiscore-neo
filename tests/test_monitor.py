@@ -132,6 +132,15 @@ class MonitorTest(unittest.TestCase):
         self.scrape(m("1", "not_yet", label="opens in 5 hours"))  # same check again: no duplicates
         self.assertEqual(len(due_scheduled_checks(self.db, NOW + timedelta(days=1))), 2)
 
+    def test_earlier_nearby_check_replaces_later_one(self):
+        """SEPSA 2026-10-02: an "opens in 59 minutes" check 6 minutes before a pending one used to be dropped."""
+        self.scrape(m("1", "not_yet", label="opens in 21 hours"))
+        later = NOW + timedelta(hours=20, minutes=24)
+        self.scrape(m("1", "not_yet", label="opens in 59 minutes"), now=later)
+        runs = sorted(c["run_at"] for c in due_scheduled_checks(self.db, NOW + timedelta(days=2)))
+        self.assertEqual(runs, [(later + timedelta(hours=1, minutes=1)).isoformat(),
+                                (NOW + timedelta(hours=22, minutes=2)).isoformat()])
+
     def test_week_countdown_and_muted_schedule_nothing(self):
         self.scrape(m("1", "not_yet", label="opens in 1 week"))
         self.scrape(m("2", "not_yet", label="opens in 2 hours"))

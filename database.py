@@ -238,14 +238,16 @@ def delete_rule(db_path, club_url, type_contains) -> bool:
 # --- Scheduled checks ---
 
 def add_scheduled_check(db_path, club_url, match_id, run_at: datetime):
-    """Schedule a one-off check. Skips it if one is already pending within 10 minutes."""
+    """Schedule a one-off check. Pending checks within 10 minutes of each other collapse into one,
+    and the earliest wins: a later one is replaced, so a tighter countdown is never delayed."""
     with get_conn(db_path) as conn:
         pending = conn.execute(
-            "SELECT run_at FROM scheduled_checks WHERE match_id = ? AND done = 0", (match_id,)
+            "SELECT id, run_at FROM scheduled_checks WHERE match_id = ? AND done = 0", (match_id,)
         ).fetchall()
-        for row in pending:
-            if abs((parse_ts(row["run_at"]) - run_at).total_seconds()) < 600:
-                return False
+        nearby = [r for r in pending if abs((parse_ts(r["run_at"]) - run_at).total_seconds()) < 600]
+        if any(parse_ts(r["run_at"]) <= run_at for r in nearby):
+            return False
+        conn.executemany("DELETE FROM scheduled_checks WHERE id = ?", [(r["id"],) for r in nearby])
         conn.execute(
             "INSERT INTO scheduled_checks (club_url, match_id, run_at) VALUES (?, ?, ?)",
             (club_url, match_id, run_at.isoformat()),
